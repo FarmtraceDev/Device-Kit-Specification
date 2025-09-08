@@ -186,8 +186,7 @@ Defines *logical* service layers for your device.
     {
       "id": "main",
       "label": "Main Channel",
-      "frame": { "type": "line", "delimiter": "
-" }
+      "frame": { "type": "line", "delimiter": "" }
     }
   ]
 }
@@ -227,8 +226,7 @@ Defines *logical* service layers for your device.
         "transport": "usb",
         "channelId": "main",
         "mode": "write",
-        "write": "STOP
-"
+        "write": "STOP"
       }
     }
   }
@@ -392,8 +390,7 @@ Below is a simplified but valid device profile.
       {
         "id": "console",
         "label": "Console Channel",
-        "frame": { "type": "line", "delimiter": "
-" }
+        "frame": { "type": "line", "delimiter": "" }
       }
     ]
   },
@@ -414,8 +411,7 @@ Below is a simplified but valid device profile.
           "transport": "usb",
           "channelId": "console",
           "mode": "write",
-          "write": "STOP
-"
+          "write": "STOP"
         }
       }
     }
@@ -489,15 +485,8 @@ If you load the registry in your app (e.g., as an asset), all matching, connecti
 
 ## Resources
 
-- [Device-Registery-Spec.json](#) – Full JSON schema  
-- [Example device profiles](#)
-
----
-
-**Need more examples?**  
-Request a template for your device type and protocol!
-
----
+- [Device-Registery-Spec.json](https://github.com/FarmtraceDev/Device-Kit-Specification/blob/main/Device-Registery-Spec.json) – Full JSON schema  
+- [Example device profiles](https://github.com/FarmtraceDev/Device-Kit-Specification/blob/main/Device-Registery-Example.json)
 
 # End of Guide
 
