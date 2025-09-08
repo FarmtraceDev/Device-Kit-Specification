@@ -1,0 +1,652 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dsync.app/schemas/device-registry/1-0-0.json",
+  "title": "Dsync Device Registry",
+  "description": "Schema for a versioned registry of hardware device profiles that can be matched by USB/BLE identity, describe transports, services/characteristics, logical components, operations, dynamic settings for UI generation, and local-only rules for on-device orchestration.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "version", "devices"],
+  "properties": {
+    "schema": {
+      "type": "string",
+      "description": "Canonical URL of this schema version.",
+      "const": "https://dsync.app/schemas/device-registry/1-0-0"
+    },
+    "version": {
+      "type": "string",
+      "description": "Semantic version of this registry file.",
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-[0-9A-Za-z-.]+)?(?:\\+[0-9A-Za-z-.]+)?$"
+    },
+    "devices": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/DeviceProfile" }
+    }
+  },
+
+  "$defs": {
+    "Hex4": {
+      "type": "string",
+      "pattern": "^0x[0-9A-Fa-f]{4}$",
+      "examples": ["0x2B24"]
+    },
+    "UUID": {
+      "type": "string",
+      "description": "Standard UUID string (lower/upper accepted).",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+    },
+    "LocaleText": {
+      "description": "Localized text: either a simple string or a map of locale -> string.",
+      "oneOf": [
+        { "type": "string", "minLength": 1 },
+        {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": false,
+          "patternProperties": {
+            "^[a-z]{2}(-[A-Z]{2})?$": { "type": "string", "minLength": 1 }
+          }
+        }
+      ]
+    },
+
+    "DeviceProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "category", "manufacturer", "identity"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Stable unique identifier, reverse-DNS recommended.",
+          "pattern": "^[a-zA-Z0-9]+([._-][a-zA-Z0-9]+)*$",
+          "examples": ["com.dsync.diesel-pump.pro"]
+        },
+        "name": { "$ref": "#/$defs/LocaleText" },
+        "category": {
+          "type": "string",
+          "description": "High-level class of device (free-form but consistent within your org).",
+          "examples": ["pump", "scale", "scanner", "flowMeter", "headset"]
+        },
+        "manufacturer": { "type": "string", "minLength": 1 },
+        "models": { "type": "array", "items": { "type": "string" }, "default": [] },
+        "tags": { "type": "array", "items": { "type": "string" }, "default": [] },
+
+        "identity": { "$ref": "#/$defs/Identity" },
+        "transports": { "$ref": "#/$defs/Transports" },
+        "services": { "$ref": "#/$defs/Services" },
+
+        "components": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Component" },
+          "default": []
+        },
+
+        "settings": { "$ref": "#/$defs/SettingsSpec" },
+        "firmware": { "$ref": "#/$defs/FirmwareInfo" },
+        "telemetry": { "$ref": "#/$defs/TelemetrySpec" },
+
+        "rules": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Rule" },
+          "default": []
+        },
+
+        "extensions": {
+          "type": "object",
+          "description": "Vendor or app-specific fields. Names must start with 'x-'. Ignored by validators.",
+          "additionalProperties": false,
+          "patternProperties": { "^x-": {} },
+          "default": {}
+        }
+      }
+    },
+
+    "Identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "usb": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/UsbMatcher" },
+          "default": []
+        },
+        "ble": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/BleMatcher" },
+          "default": []
+        },
+        "fallbackHint": {
+          "type": "string",
+          "description": "Optional hint for matching strategy, e.g., 'match-first'.",
+          "enum": ["match-first", "prefer-ble", "prefer-usb"],
+          "default": "match-first"
+        }
+      },
+      "anyOf": [
+        { "required": ["usb"] },
+        { "required": ["ble"] }
+      ]
+    },
+
+    "UsbMatcher": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["vid", "pid"],
+      "properties": {
+        "vid": { "$ref": "#/$defs/Hex4" },
+        "pid": { "$ref": "#/$defs/Hex4" },
+        "interfaceClass": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 255,
+          "description": "Optional interface class filter (0–255)."
+        }
+      }
+    },
+
+    "BleMatcher": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "localNamePrefix": { "type": "string" },
+        "serviceUuidsAny": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/UUID" },
+          "default": []
+        },
+        "manufacturerId": { "type": "integer", "minimum": 0 }
+      }
+    },
+
+    "Transports": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "usb": { "$ref": "#/$defs/UsbTransport" },
+        "ble": { "$ref": "#/$defs/BleTransport" }
+      }
+    },
+
+    "UsbTransport": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "protocol": {
+          "type": "string",
+          "description": "High-level USB protocol used by the device.",
+          "enum": ["cdc-acm", "hid", "vendor", "custom"]
+        },
+        "endpoints": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "in": { "type": "integer", "minimum": 1 },
+            "out": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "baud": { "type": "integer", "minimum": 1200 },
+        "timeoutMs": { "type": "integer", "minimum": 1 },
+        "retries": { "type": "integer", "minimum": 0 }
+      }
+    },
+
+    "BleTransport": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mtu": { "type": "integer", "minimum": 23 },
+        "connectionPriority": {
+          "type": "string",
+          "enum": ["high", "balanced", "lowPower"],
+          "default": "balanced"
+        },
+        "reconnect": { "$ref": "#/$defs/ReconnectPolicy" }
+      }
+    },
+
+    "ReconnectPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "maxAttempts": { "type": "integer", "minimum": 0, "default": 0 },
+        "backoffMs": { "type": "integer", "minimum": 0, "default": 0 }
+      }
+    },
+
+    "Services": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ble": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/BleService" },
+          "default": []
+        },
+        "usb": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/UsbService" },
+          "default": []
+        }
+      }
+    },
+
+    "BleService": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["uuid"],
+      "properties": {
+        "uuid": { "$ref": "#/$defs/UUID" },
+        "label": { "$ref": "#/$defs/LocaleText" },
+        "characteristics": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/BleCharacteristic" },
+          "default": []
+        }
+      }
+    },
+
+    "BleCharacteristic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["uuid", "properties", "format"],
+      "properties": {
+        "uuid": { "$ref": "#/$defs/UUID" },
+        "label": { "$ref": "#/$defs/LocaleText" },
+        "properties": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["read", "write", "notify", "indicate", "writeNoResponse"]
+          },
+          "minItems": 1
+        },
+        "format": { "type": "string", "enum": ["bytes", "struct", "bitmask"] },
+        "struct": { "type": "array", "items": { "$ref": "#/$defs/StructField" } },
+        "bits": { "type": "array", "items": { "$ref": "#/$defs/BitField" } },
+        "notify": { "type": "boolean" },
+        "writeMode": { "type": "string", "enum": ["write", "writeWithoutResponse"] }
+      },
+      "allOf": [
+        { "if": { "properties": { "format": { "const": "struct" } } }, "then": { "required": ["struct"] } },
+        { "if": { "properties": { "format": { "const": "bitmask" } } }, "then": { "required": ["bits"] } }
+      ]
+    },
+
+    "StructField": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "type"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "type": {
+          "type": "string",
+          "enum": ["bool", "uint8", "uint16", "uint32", "uint64", "int16", "int32", "float", "double", "string"]
+        },
+        "unit": { "type": "string" }
+      }
+    },
+
+    "BitField": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bit", "name"],
+      "properties": {
+        "bit": { "type": "integer", "minimum": 0, "maximum": 31 },
+        "name": { "type": "string", "minLength": 1 }
+      }
+    },
+
+    "UsbService": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "label": { "$ref": "#/$defs/LocaleText" },
+        "frame": { "$ref": "#/$defs/UsbFrame" }
+      }
+    },
+
+    "UsbFrame": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": { "type": "string", "enum": ["line", "raw"] },
+        "delimiter": {
+          "type": "string",
+          "description": "Required when type=line."
+        }
+      },
+      "allOf": [
+        { "if": { "properties": { "type": { "const": "line" } } }, "then": { "required": ["delimiter"] } }
+      ]
+    },
+
+    "Component": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "type": { "type": "string", "minLength": 1 },
+        "label": { "$ref": "#/$defs/LocaleText" },
+        "capabilities": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Capability" },
+          "default": []
+        },
+        "operations": {
+          "type": "object",
+          "description": "Map of operationName -> Operation mapping.",
+          "additionalProperties": { "$ref": "#/$defs/Operation" },
+          "default": {}
+        }
+      }
+    },
+
+    "Capability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "unit": { "type": "string" },
+        "precision": { "type": "number" }
+      }
+    },
+
+    "HexBytes": {
+      "type": "string",
+      "description": "Hex byte string; spaces/colons/dashes allowed as separators.",
+      "pattern": "^[0-9A-Fa-f]{2}([ :,-]?[0-9A-Fa-f]{2})*$",
+      "examples": ["01", "A0 01 FF", "a0-01-ff"]
+    },
+
+    "Operation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["transport"],
+      "properties": {
+        "transport": { "type": "string", "enum": ["ble", "usb"] },
+        "serviceUuid": { "$ref": "#/$defs/UUID" },
+        "characteristicUuid": { "$ref": "#/$defs/UUID" },
+        "mode": { "type": "string", "enum": ["read", "write", "subscribe", "notify"] },
+        "channelId": { "type": "string" },
+        "write": { "type": "string" },
+        "writeHex": { "$ref": "#/$defs/HexBytes" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "transport": { "const": "ble" } } },
+          "then": {
+            "required": ["serviceUuid"],
+            "anyOf": [
+              { "required": ["characteristicUuid"] },
+              { "required": ["mode"], "properties": { "mode": { "enum": ["read", "write", "subscribe", "notify"] } } }
+            ]
+          }
+        },
+        { "if": { "properties": { "transport": { "const": "usb" } } }, "then": { "required": ["channelId"] } },
+        {
+          "if": { "properties": { "mode": { "const": "write" } } },
+          "then": { "anyOf": [ { "required": ["writeHex"] }, { "required": ["write"] } ] }
+        }
+      ]
+    },
+
+    "SettingsSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "groups": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/SettingsGroup" },
+          "default": []
+        },
+        "visibilityRules": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/VisibilityRule" },
+          "default": []
+        }
+      }
+    },
+
+    "SettingsGroup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label", "items"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "label": { "$ref": "#/$defs/LocaleText" },
+        "items": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/SettingItem" }
+        }
+      }
+    },
+
+    "SettingItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "type", "label"],
+      "properties": {
+        "key": { "type": "string", "pattern": "^[a-zA-Z0-9_.-]+$" },
+        "type": { "type": "string", "enum": ["boolean", "number", "select", "text", "password"] },
+        "label": { "$ref": "#/$defs/LocaleText" },
+        "default": {
+          "description": "Default value as string or number (normalized by the app).",
+          "oneOf": [{ "type": "string" }, { "type": "number" }, { "type": "boolean" }]
+        },
+        "options": { "type": "array", "items": { "$ref": "#/$defs/SettingOption" } },
+        "min": { "type": "number" },
+        "max": { "type": "number" },
+        "step": { "type": "number" },
+        "persistence": {
+          "type": "string",
+          "enum": ["app", "device", "secure-app"],
+          "default": "app"
+        },
+        "advanced": { "type": "boolean", "default": false }
+      },
+      "allOf": [
+        { "if": { "properties": { "type": { "const": "select" } } }, "then": { "required": ["options"] } }
+      ]
+    },
+
+    "SettingOption": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "label"],
+      "properties": {
+        "value": { "oneOf": [{ "type": "string" }, { "type": "number" }, { "type": "boolean" }] },
+        "label": { "$ref": "#/$defs/LocaleText" }
+      }
+    },
+
+    "VisibilityRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["when", "show"],
+      "properties": {
+        "when": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["key"],
+          "properties": {
+            "key": { "type": "string", "pattern": "^[a-zA-Z0-9_.-]+$" },
+            "equals": { "oneOf": [{ "type": "string" }, { "type": "number" }, { "type": "boolean" }] }
+          }
+        },
+        "show": {
+          "type": "array",
+          "description": "List of item paths (registry-defined) that become visible if condition matches.",
+          "items": { "type": "string", "minLength": 1 },
+          "minItems": 1
+        }
+      }
+    },
+
+    "FirmwareInfo": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "minVersion": {
+          "type": "string",
+          "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-[0-9A-Za-z-.]+)?(?:\\+[0-9A-Za-z-.]+)?$"
+        },
+        "updateUrl": { "type": "string", "format": "uri" },
+        "notes": { "type": "string" }
+      }
+    },
+
+    "TelemetrySpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "privacy": { "type": "string", "enum": ["none", "minimal", "full"], "default": "minimal" },
+        "fields": { "type": "array", "items": { "$ref": "#/$defs/TelemetryField" }, "default": [] }
+      }
+    },
+
+    "TelemetryField": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "type"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "type": { "type": "string", "enum": ["counter", "gauge", "histogram"] }
+      }
+    },
+
+    "Rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["when", "then"],
+      "properties": {
+        "id": { "type": "string" },
+        "when": { "$ref": "#/$defs/Expr" },
+        "then": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/Action" }
+        }
+      }
+    },
+
+    "Expr": {
+      "oneOf": [
+        { "$ref": "#/$defs/ExprAnd" },
+        { "$ref": "#/$defs/ExprOr" },
+        { "$ref": "#/$defs/ExprCmp" },
+        { "$ref": "#/$defs/ExprIn" }
+      ]
+    },
+
+    "ExprAnd": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["and"],
+      "properties": {
+        "and": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/Expr" }
+        }
+      }
+    },
+
+    "ExprOr": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["or"],
+      "properties": {
+        "or": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/Expr" }
+        }
+      }
+    },
+
+    "ExprCmp": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["left", "op", "right"],
+      "properties": {
+        "left": { "type": "string", "description": "Path key, e.g. settings.safety.autoShutoffSeconds or devices.category:scale.telemetry.weightKg" },
+        "op": { "type": "string", "enum": ["==", "!=", ">", ">=", "<", "<="] },
+        "right": { "oneOf": [ { "type": "number" }, { "type": "boolean" }, { "type": "string" } ] }
+      }
+    },
+
+    "ExprIn": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["left", "in"],
+      "properties": {
+        "left": { "type": "string" },
+        "in": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "oneOf": [ { "type": "number" }, { "type": "boolean" }, { "type": "string" } ] }
+        }
+      }
+    },
+
+    "Action": {
+      "oneOf": [
+        { "$ref": "#/$defs/ActionInvoke" },
+        { "$ref": "#/$defs/ActionSet" },
+        { "$ref": "#/$defs/ActionAlert" }
+      ]
+    },
+
+    "TargetSelector": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "byId": { "type": "string" },
+        "byProfile": { "type": "string" },
+        "byCategory": { "type": "string" },
+        "byTags": { "type": "array", "items": { "type": "string" } },
+        "first": { "type": "boolean", "default": true }
+      }
+    },
+
+    "ActionInvoke": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["invoke"],
+      "properties": {
+        "invoke": { "type": "string", "description": "Operation name on a component" },
+        "componentId": { "type": "string", "description": "Optional; defaults to the component that owns the operation if omitted" },
+        "target": { "$ref": "#/$defs/TargetSelector" },
+        "args": { "type": "object", "additionalProperties": true }
+      }
+    },
+
+    "ActionSet": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["set", "value"],
+      "properties": {
+        "set": { "type": "string", "description": "Settings key, e.g. safety.requireHeartbeat" },
+        "value": { "oneOf": [ { "type": "number" }, { "type": "boolean" }, { "type": "string" } ] },
+        "target": { "$ref": "#/$defs/TargetSelector" }
+      }
+    },
+
+    "ActionAlert": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["alert"],
+      "properties": {
+        "alert": { "type": "string", "description": "User-facing message" },
+        "level": { "type": "string", "enum": ["info", "warn", "error"], "default": "info" }
+      }
+    }
+  }
+}

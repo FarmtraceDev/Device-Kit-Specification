@@ -1,0 +1,337 @@
+{
+  "schema": "https://dsync.app/schemas/device-registry/1-0-0",
+  "version": "1.0.0",
+  "devices": [
+    {
+      "id": "com.dsync.diesel-pump.pro",
+      "name": { "en": "Dsync Diesel Pump Pro" },
+      "category": "pump",
+      "manufacturer": "Dsync Labs",
+      "models": ["DP-PRO-100", "DP-PRO-150"],
+      "tags": ["ble", "usb", "diesel", "pump", "flow-meter"],
+
+      "identity": {
+        "usb": [
+          { "vid": "0x2B24", "pid": "0x9001", "interfaceClass": 255 }
+        ],
+        "ble": [
+          {
+            "localNamePrefix": "DsyncPump",
+            "serviceUuidsAny": [
+              "2e000000-7e22-4a5a-9f4b-2f7b9b2f0000"
+            ],
+            "manufacturerId": 2222
+          }
+        ],
+        "fallbackHint": "match-first"
+      },
+
+      "transports": {
+        "ble": {
+          "mtu": 185,
+          "connectionPriority": "high",
+          "reconnect": { "maxAttempts": 5, "backoffMs": 1500 }
+        },
+        "usb": {
+          "protocol": "cdc-acm",
+          "endpoints": { "in": 3, "out": 2 },
+          "baud": 115200,
+          "timeoutMs": 2000,
+          "retries": 2
+        }
+      },
+
+      "services": {
+        "ble": [
+          {
+            "uuid": "2e000000-7e22-4a5a-9f4b-2f7b9b2f0000",
+            "label": "Pump Service",
+            "characteristics": [
+              {
+                "uuid": "2e000001-7e22-4a5a-9f4b-2f7b9b2f0000",
+                "label": "Pump Command",
+                "properties": ["write"],
+                "format": "bytes",
+                "writeMode": "writeWithoutResponse"
+              },
+              {
+                "uuid": "2e000002-7e22-4a5a-9f4b-2f7b9b2f0000",
+                "label": "Pump State",
+                "properties": ["notify", "read"],
+                "format": "struct",
+                "struct": [
+                  { "name": "isOpen", "type": "bool" },
+                  { "name": "fault", "type": "uint16" }
+                ],
+                "notify": true
+              },
+              {
+                "uuid": "2e000003-7e22-4a5a-9f4b-2f7b9b2f0000",
+                "label": "Flow Telemetry",
+                "properties": ["notify", "read"],
+                "format": "struct",
+                "struct": [
+                  { "name": "litresDispensed", "type": "float", "unit": "L" },
+                  { "name": "instFlowLpm", "type": "float", "unit": "L/min" },
+                  { "name": "stable", "type": "bool" }
+                ],
+                "notify": true
+              },
+              {
+                "uuid": "2e000004-7e22-4a5a-9f4b-2f7b9b2f0000",
+                "label": "Heartbeat",
+                "properties": ["notify"],
+                "format": "struct",
+                "struct": [
+                  { "name": "timestampMs", "type": "uint64" },
+                  { "name": "fwVersion", "type": "uint32" },
+                  { "name": "voltageV", "type": "float", "unit": "V" },
+                  { "name": "tempC", "type": "float", "unit": "°C" }
+                ],
+                "notify": true
+              }
+            ]
+          }
+        ],
+        "usb": [
+          {
+            "id": "usb-line",
+            "label": "USB Line Protocol",
+            "frame": { "type": "line", "delimiter": "\n" }
+          }
+        ]
+      },
+
+      "components": [
+        {
+          "id": "diesel-pump",
+          "type": "pump",
+          "label": "Diesel Pump",
+          "capabilities": [
+            { "name": "open" },
+            { "name": "close" },
+            { "name": "readLitres", "unit": "L", "precision": 0.01 },
+            { "name": "heartbeat" }
+          ],
+          "operations": {
+            "open": {
+              "transport": "ble",
+              "serviceUuid": "2e000000-7e22-4a5a-9f4b-2f7b9b2f0000",
+              "characteristicUuid": "2e000001-7e22-4a5a-9f4b-2f7b9b2f0000",
+              "mode": "write",
+              "writeHex": "01"   // 0x01 = OPEN
+            },
+            "close": {
+              "transport": "ble",
+              "serviceUuid": "2e000000-7e22-4a5a-9f4b-2f7b9b2f0000",
+              "characteristicUuid": "2e000001-7e22-4a5a-9f4b-2f7b9b2f0000",
+              "mode": "write",
+              "writeHex": "00"   // 0x00 = CLOSE
+            },
+            "readLitres": {
+              "transport": "ble",
+              "serviceUuid": "2e000000-7e22-4a5a-9f4b-2f7b9b2f0000",
+              "characteristicUuid": "2e000003-7e22-4a5a-9f4b-2f7b9b2f0000",
+              "mode": "subscribe"
+            },
+            "heartbeat": {
+              "transport": "ble",
+              "serviceUuid": "2e000000-7e22-4a5a-9f4b-2f7b9b2f0000",
+              "characteristicUuid": "2e000004-7e22-4a5a-9f4b-2f7b9b2f0000",
+              "mode": "subscribe"
+            },
+
+            "open_usb": {
+              "transport": "usb",
+              "channelId": "usb-line",
+              "write": "PUMP OPEN\n"
+            },
+            "close_usb": {
+              "transport": "usb",
+              "channelId": "usb-line",
+              "write": "PUMP CLOSE\n"
+            }
+          }
+        },
+        {
+          "id": "flow-meter",
+          "type": "flowMeter",
+          "label": "Inline Flow Meter",
+          "capabilities": [
+            { "name": "readLitres", "unit": "L", "precision": 0.01 },
+            { "name": "calibrate" }
+          ],
+          "operations": {
+            "readLitres": {
+              "transport": "ble",
+              "serviceUuid": "2e000000-7e22-4a5a-9f4b-2f7b9b2f0000",
+              "characteristicUuid": "2e000003-7e22-4a5a-9f4b-2f7b9b2f0000",
+              "mode": "subscribe"
+            },
+            "calibrate": {
+              "transport": "usb",
+              "channelId": "usb-line",
+              "write": "CAL PPL=${settings.calibration.pulsesPerLiter}\n"
+            }
+          }
+        }
+      ],
+
+      "settings": {
+        "groups": [
+          {
+            "id": "general",
+            "label": "General",
+            "items": [
+              {
+                "key": "heartbeat.intervalSeconds",
+                "type": "number",
+                "label": "Heartbeat Interval (s)",
+                "default": "5",
+                "min": 1,
+                "max": 60,
+                "step": 1,
+                "persistence": "device"
+              },
+              {
+                "key": "units.volume",
+                "type": "select",
+                "label": "Volume Unit",
+                "default": "L",
+                "options": [
+                  { "value": "L", "label": "Litres" },
+                  { "value": "gal", "label": "Gallons (US)" }
+                ],
+                "persistence": "app"
+              }
+            ]
+          },
+          {
+            "id": "calibration",
+            "label": "Calibration",
+            "items": [
+              {
+                "key": "calibration.pulsesPerLiter",
+                "type": "number",
+                "label": "Pulses per Litre",
+                "default": "4500",
+                "min": 100,
+                "max": 20000,
+                "step": 10,
+                "persistence": "device"
+              },
+              {
+                "key": "calibration.offsetLitres",
+                "type": "number",
+                "label": "Offset (L)",
+                "default": "0.00",
+                "min": -5.0,
+                "max": 5.0,
+                "step": 0.01,
+                "persistence": "device",
+                "advanced": true
+              }
+            ]
+          },
+          {
+            "id": "safety",
+            "label": "Safety",
+            "items": [
+              {
+                "key": "safety.autoShutoffSeconds",
+                "type": "number",
+                "label": "Auto Shutoff (s)",
+                "default": "600",
+                "min": 10,
+                "max": 3600,
+                "step": 10,
+                "persistence": "device"
+              },
+              {
+                "key": "safety.maxSessionLitres",
+                "type": "number",
+                "label": "Max per Session (L)",
+                "default": "500.0",
+                "min": 1.0,
+                "max": 10000.0,
+                "step": 0.1,
+                "persistence": "device"
+              },
+              {
+                "key": "safety.requireHeartbeat",
+                "type": "boolean",
+                "label": "Require Heartbeat",
+                "default": "true",
+                "persistence": "device"
+              }
+            ]
+          },
+          {
+            "id": "io",
+            "label": "I/O",
+            "items": [
+              {
+                "key": "io.valvePolarity",
+                "type": "select",
+                "label": "Valve Polarity",
+                "default": "activeHigh",
+                "options": [
+                  { "value": "activeHigh", "label": "Active High" },
+                  { "value": "activeLow", "label": "Active Low" }
+                ],
+                "persistence": "device",
+                "advanced": true
+              },
+              {
+                "key": "io.debounceMs",
+                "type": "number",
+                "label": "Pulse Debounce (ms)",
+                "default": "5",
+                "min": 0,
+                "max": 100,
+                "step": 1,
+                "persistence": "device",
+                "advanced": true
+              }
+            ]
+          }
+        ],
+        "visibilityRules": [
+          {
+            "when": { "key": "units.volume", "equals": "gal" },
+            "show": ["calibration.items.1"]  // show Offset when using gallons
+          }
+        ]
+      },
+
+      "firmware": {
+        "minVersion": "1.0.3",
+        "updateUrl": "https://updates.dsync.app/dp-pro/",
+        "notes": "Improved flow stability and heartbeat fields"
+      },
+
+      "telemetry": {
+        "privacy": "minimal",
+        "fields": [
+          { "name": "connectionErrors", "type": "counter" },
+          { "name": "pumpOpens", "type": "counter" },
+          { "name": "avgFlowLpm", "type": "gauge" },
+          { "name": "lastHeartbeatMs", "type": "gauge" }
+        ]
+      },
+
+      "extensions": {
+        "x-commands": {
+          "ble": {
+            "open": "01",
+            "close": "00"
+          },
+          "usb": {
+            "open": "PUMP OPEN\\n",
+            "close": "PUMP CLOSE\\n"
+          }
+        }
+      }
+    }
+  ]
+}
